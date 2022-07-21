@@ -96,6 +96,42 @@ fetch_front_only = '''
 }}
 '''
 
+# not work in 3.x
+def render_result_to_image(name):
+    # Find render result
+    render_result = next(image for image in bpy.data.images if image.type == "RENDER_RESULT")
+
+    print(render_result)
+
+    # Create a GPU texture that shares GPU memory with Blender
+    gpu_tex = gpu.texture.from_image(render_result)
+
+    print(gpu_tex)
+
+    # Read image from GPU
+    gpu_tex.read()
+
+    # OR read image into a NumPy array (might be more convenient for later operations)
+    fbo = gpu.types.GPUFrameBuffer(color_slots=(gpu_tex,))
+
+    print(fbo)
+
+    buffer_np = np.empty(gpu_tex.width * gpu_tex.height * 4, dtype=np.float32)
+    buffer = bgl.Buffer(bgl.GL_FLOAT, buffer_np.shape, buffer_np)
+    with fbo.bind():
+        bgl.glReadBuffer(bgl.GL_BACK)
+        bgl.glReadPixels(0, 0, gpu_tex.width, gpu_tex.height, bgl.GL_RGBA, bgl.GL_FLOAT, buffer)
+
+    # Now the NumPy array has the pixel data, you can reshape it and/or export it as bytes if you wish
+    # print(buffer_np)
+    if not name in bpy.data.images.keys():
+        bpy.data.images.new(name, gpu_tex.width, gpu_tex.height)
+    image = bpy.data.images[name]
+    image.scale(gpu_tex.width, gpu_tex.height)
+    image.pixels.foreach_set(buffer)
+    return image
+
+
 class Renderer:
     
     def __init__(self, is_stereo = False, is_animation = False, on_memory = False, mode = 'EQUI', HFOV = 180, VFOV = 180, folder = ''):
@@ -390,8 +426,8 @@ class Renderer:
             self.scene.render.image_settings.stereo_3d_format.display_mode = self.stereo_mode
         for filename in self.createdFiles:
             os.remove(filename)
-    
-    
+
+
     def render_image(self, direction):
         
         # Render the image and load it into the script
@@ -421,6 +457,7 @@ class Renderer:
                                     tmp_loc[2]]
             if self.on_memory:
                 bpy.ops.render.render()
+                renderedImageL = render_result_to_image(nameL)
             else:
                 self.scene.render.filepath = self.path + nameL + '.png'
                 bpy.ops.render.render(write_still=True)
@@ -436,6 +473,7 @@ class Renderer:
                                     tmp_loc[2]]
             if self.on_memory:
                 bpy.ops.render.render()
+                renderedImageR = render_result_to_image(nameR)
             else:
                 self.scene.render.filepath = self.path + nameR + '.png'
                 bpy.ops.render.render(write_still=True)
@@ -456,6 +494,8 @@ class Renderer:
                 bpy.data.images.remove(bpy.data.images[nameR])
             if self.on_memory:
                 bpy.ops.render.render()
+                renderedImageL = render_result_to_image(nameL)
+                renderedImageR = render_result_to_image(nameR)
             else:
                 self.scene.render.filepath = self.path + name + '.png'
                 bpy.ops.render.render(write_still=True)
@@ -488,6 +528,7 @@ class Renderer:
                 bpy.data.images.remove(bpy.data.images[name])
             if self.on_memory:
                 bpy.ops.render.render()
+                renderedImageL = render_result_to_image(name)
             else:
                 self.scene.render.filepath = self.path + name + '.png'
                 bpy.ops.render.render(write_still=True)
@@ -581,12 +622,12 @@ class Renderer:
         if self.is_animation:
             # Color Management Settings issue solved by nagadomi
             imageResult.file_format = 'PNG'
-            imageResult.filepath_raw = self.path+self.folder_name+image_name
+            imageResult.filepath_raw = self.path + self.folder_name + image_name
             imageResult.save()
             self.scene.frame_set(self.scene.frame_current+frame_step)
         else:
             imageResult.file_format = 'PNG'
-            imageResult.filepath_raw = self.path+image_name
+            imageResult.filepath_raw = self.path + image_name
             imageResult.save()
         
         bpy.data.images.remove(imageResult)
