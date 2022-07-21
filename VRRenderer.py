@@ -98,7 +98,7 @@ fetch_front_only = '''
 
 class Renderer:
     
-    def __init__(self, is_stereo = False, is_animation = False, mode = 'EQUI', HFOV = 180, VFOV = 180, folder = ''):
+    def __init__(self, is_stereo = False, is_animation = False, on_memory = False, mode = 'EQUI', HFOV = 180, VFOV = 180, folder = ''):
         
         # Check if the file is saved or not, can cause errors when not saved
         if not bpy.data.is_saved:
@@ -127,6 +127,7 @@ class Renderer:
         self.is_animation = is_animation
         self.HFOV = min(max(HFOV, 1), 360)
         self.VFOV = min(max(VFOV, 1), 180)
+        self.on_memory = on_memory
         self.no_back_image = (self.HFOV <= 270)
         self.no_side_images = (self.HFOV <= 90)
         self.no_top_bottom_images = (self.VFOV <= 90)
@@ -398,7 +399,8 @@ class Renderer:
         if self.is_stereo:
             nameL = name + '_L'
             nameR = name + '_R'
-        tmp = self.scene.render.filepath
+        if not self.on_memory:
+            tmp = self.scene.render.filepath
         
         # If rendering for VR, render the side images separately to avoid seams
         if self.is_stereo and direction in {'right', 'left'}:
@@ -417,12 +419,14 @@ class Renderer:
             self.camera.location = [tmp_loc[0]+(0.5*self.IPD*cos(camera_angle)),\
                                     tmp_loc[1]+(0.5*self.IPD*sin(camera_angle)),\
                                     tmp_loc[2]]
-
-            self.scene.render.filepath = self.path + nameL + '.png'
-            bpy.ops.render.render(write_still=True)
-            self.createdFiles.add(self.scene.render.filepath)
-            renderedImageL = bpy.data.images.load(self.scene.render.filepath)
-            renderedImageL.name = nameL
+            if self.on_memory:
+                bpy.ops.render.render()
+            else:
+                self.scene.render.filepath = self.path + nameL + '.png'
+                bpy.ops.render.render(write_still=True)
+                self.createdFiles.add(self.scene.render.filepath)
+                renderedImageL = bpy.data.images.load(self.scene.render.filepath)
+                renderedImageL.name = nameL
             
             #self.camera_empty.location = [tmp_loc[0]-(0.5*self.IPD*cos(camera_angle)),\
             #                        tmp_loc[1]-(0.5*self.IPD*sin(camera_angle)),\
@@ -430,12 +434,14 @@ class Renderer:
             self.camera.location = [tmp_loc[0]-(0.5*self.IPD*cos(camera_angle)),\
                                     tmp_loc[1]-(0.5*self.IPD*sin(camera_angle)),\
                                     tmp_loc[2]]
-
-            self.scene.render.filepath = self.path + nameR + '.png'
-            bpy.ops.render.render(write_still=True)
-            self.createdFiles.add(self.scene.render.filepath)
-            renderedImageR = bpy.data.images.load(self.scene.render.filepath)
-            renderedImageR.name = nameR
+            if self.on_memory:
+                bpy.ops.render.render()
+            else:
+                self.scene.render.filepath = self.path + nameR + '.png'
+                bpy.ops.render.render(write_still=True)
+                self.createdFiles.add(self.scene.render.filepath)
+                renderedImageR = bpy.data.images.load(self.scene.render.filepath)
+                renderedImageR.name = nameR
 
             self.scene.render.use_multiview = True
             #self.camera_empty.location = tmp_loc
@@ -448,45 +454,50 @@ class Renderer:
                 bpy.data.images.remove(bpy.data.images[nameL])
             if nameR in bpy.data.images:
                 bpy.data.images.remove(bpy.data.images[nameR])
-
-            self.scene.render.filepath = self.path + name + '.png'
-            bpy.ops.render.render(write_still=True)
-            self.createdFiles.add(self.scene.render.filepath)
-            renderedImage =  bpy.data.images.load(self.scene.render.filepath)
-            renderedImage.name = name
-            renderedImage.colorspace_settings.name='Linear'
-            imageLen = len(renderedImage.pixels)
-            if self.no_back_image and direction in {'top', 'bottom'}:
-                renderedImageL = bpy.data.images.new(nameL, self.side_resolution, int(self.side_resolution/2))
-                renderedImageR = bpy.data.images.new(nameR, self.side_resolution, int(self.side_resolution/2))
+            if self.on_memory:
+                bpy.ops.render.render()
             else:
-                renderedImageL = bpy.data.images.new(nameL, self.side_resolution, self.side_resolution)
-                renderedImageR = bpy.data.images.new(nameR, self.side_resolution, self.side_resolution)
-            
-            # Split the render into two images
-            buff = np.empty((imageLen,), dtype=np.float32)
-            renderedImage.pixels.foreach_get(buff)
-            if direction == 'back':
-                renderedImageL.pixels.foreach_set(buff[imageLen//2:])
-                renderedImageR.pixels.foreach_set(buff[:imageLen//2])
-            else:
-                renderedImageR.pixels.foreach_set(buff[imageLen//2:])
-                renderedImageL.pixels.foreach_set(buff[:imageLen//2])
-            renderedImageL.pack()
-            renderedImageR.pack()
-            bpy.data.images.remove(renderedImage)
+                self.scene.render.filepath = self.path + name + '.png'
+                bpy.ops.render.render(write_still=True)
+                self.createdFiles.add(self.scene.render.filepath)
+                renderedImage =  bpy.data.images.load(self.scene.render.filepath)
+                renderedImage.name = name
+                renderedImage.colorspace_settings.name='Linear'
+                imageLen = len(renderedImage.pixels)
+                if self.no_back_image and direction in {'top', 'bottom'}:
+                    renderedImageL = bpy.data.images.new(nameL, self.side_resolution, int(self.side_resolution/2))
+                    renderedImageR = bpy.data.images.new(nameR, self.side_resolution, int(self.side_resolution/2))
+                else:
+                    renderedImageL = bpy.data.images.new(nameL, self.side_resolution, self.side_resolution)
+                    renderedImageR = bpy.data.images.new(nameR, self.side_resolution, self.side_resolution)
+                
+                # Split the render into two images
+                buff = np.empty((imageLen,), dtype=np.float32)
+                renderedImage.pixels.foreach_get(buff)
+                if direction == 'back':
+                    renderedImageL.pixels.foreach_set(buff[imageLen//2:])
+                    renderedImageR.pixels.foreach_set(buff[:imageLen//2])
+                else:
+                    renderedImageR.pixels.foreach_set(buff[imageLen//2:])
+                    renderedImageL.pixels.foreach_set(buff[:imageLen//2])
+                renderedImageL.pack()
+                renderedImageR.pack()
+                bpy.data.images.remove(renderedImage)
         else:
             if name in bpy.data.images:
                 bpy.data.images.remove(bpy.data.images[name])
-
-            self.scene.render.filepath = self.path + name + '.png'
-            bpy.ops.render.render(write_still=True)
-            self.createdFiles.add(self.scene.render.filepath)
-            renderedImageL = bpy.data.images.load(self.scene.render.filepath)
-            renderedImageL.name = name
+            if self.on_memory:
+                bpy.ops.render.render()
+            else:
+                self.scene.render.filepath = self.path + name + '.png'
+                bpy.ops.render.render(write_still=True)
+                self.createdFiles.add(self.scene.render.filepath)
+                renderedImageL = bpy.data.images.load(self.scene.render.filepath)
+                renderedImageL.name = name
             renderedImageR = None
         
-        self.scene.render.filepath = tmp
+        if not self.on_memory:
+            self.scene.render.filepath = tmp
         return renderedImageL, renderedImageR
     
     

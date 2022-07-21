@@ -40,10 +40,11 @@ class RenderImage(Operator):
     def execute(self, context):
         print("eeVR: execute")
 
+        on_memory = context.scene.eeVR.onMemory
         mode = context.scene.eeVR.renderModeEnum
         HFOV = context.scene.eeVR.renderHFOV
         VFOV = context.scene.eeVR.renderVFOV
-        renderer = Renderer(context.scene.render.use_multiview, False, mode, HFOV, VFOV)
+        renderer = Renderer(context.scene.render.use_multiview, False, on_memory, mode, HFOV, VFOV)
         now = time.time()
         renderer.render_and_save()
         print("eeVR: {} seconds".format(round(time.time() - now, 2)))
@@ -91,6 +92,7 @@ class RenderAnimation(Operator):
 
         context.scene.eeVR.cancel = False
 
+        on_memory = context.scene.eeVR.onMemory
         mode = context.scene.eeVR.renderModeEnum
         HFOV = context.scene.eeVR.renderHFOV
         VFOV = context.scene.eeVR.renderVFOV
@@ -99,7 +101,7 @@ class RenderAnimation(Operator):
         folder_name = "Render Result {}/".format(start_time)
         path = bpy.path.abspath("//")
         os.makedirs(path+folder_name, exist_ok=True)
-        self.renderer = Renderer(context.scene.render.use_multiview, True, mode, HFOV, VFOV, folder_name)
+        self.renderer = Renderer(context.scene.render.use_multiview, True, on_memory, mode, HFOV, VFOV, folder_name)
 
         self.frame_end = context.scene.frame_end
         frame_start = context.scene.frame_start
@@ -148,6 +150,7 @@ class RenderToolsPanel(Panel):
             col.prop(context.scene.eeVR, 'domeModeEnum')
         col.prop(context.scene.eeVR, 'renderHFOV')
         col.prop(context.scene.eeVR, 'renderVFOV')
+        col.prop(context.scene.eeVR, 'onMemory')
         col.operator(RenderImage.bl_idname, text="Render Image")
         col.operator(RenderAnimation.bl_idname, text="Render Animation")
         if not context.scene.eeVR.cancel:
@@ -199,6 +202,10 @@ class Properties(bpy.types.PropertyGroup):
 
     cancel: bpy.props.BoolProperty(
         name="Cancel", default=True
+    )
+
+    onMemory: bpy.props.BoolProperty(
+        name="On Memory", default=True
     )
 
     @classmethod
