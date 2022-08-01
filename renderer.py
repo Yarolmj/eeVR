@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 # Define parts of fragment shader 
 commdef = '''
 #define PI        3.1415926535897932384626
-#define FOVFRAC   %f
+#define HFOVFRAC  %f
+#define VFOVFRAC  %f
 #define SIDEFRAC  %f
 #define TBFRAC    %f
 #define HCLIP     %f
@@ -118,7 +119,7 @@ dome = '''
     
     // Calculate the position on unit sphere
     vec2 dunit = normalize(d);
-    float phi = FOVFRAC * PI * r;
+    float phi = HFOVFRAC * PI * r;
     vec3 pt;
     %s
     pt.z = cos(phi);
@@ -128,14 +129,14 @@ dome = '''
 domemodes = [
     'pt.xy = dunit * phi;',
     'pt.xy = dunit * sin(phi);',
-    'pt.xy = 2.0 * dunit * sin(phi * 0.5);',
-    'pt.xy = 2.0 * dunit * tan(phi * 0.5);'
+    'pt.xy = 2.0 * dunit * sin(phi * VFOVFRAC);',
+    'pt.xy = 2.0 * dunit * tan(phi * VFOVFRAC);'
 ]
 
 equi = '''
     // Calculate the pointing angle
-    float azimuth = FOVFRAC * PI * vTexCoord.x;
-    float elevation = 0.5 * PI * vTexCoord.y;
+    float azimuth = HFOVFRAC * PI * vTexCoord.x;
+    float elevation = VFOVFRAC * PI * vTexCoord.y;
     
     // Calculate the position on unit sphere
     vec3 pt;
@@ -315,7 +316,6 @@ class Renderer:
         no_side_plane = props.GetNoSidePlane()
         h_fov = props.GetHFOV()
         v_fov = props.GetVFOV()
-        render_fov = pi if props.fovModeEnum == '180' else 2 * pi if props.fovModeEnum == '360' else max(h_fov, v_fov)
         self.no_back_image = (h_fov <= 3*pi/2)
         self.no_side_images = no_side_plane or (h_fov <= pi/2)
         self.no_top_bottom_images = (v_fov <= (h_fov if no_side_plane else pi/2))
@@ -329,14 +329,14 @@ class Renderer:
         self.resolution_percentage_origin = self.scene.render.resolution_percentage
 
         scale = self.resolution_percentage_origin / 100.0
+        renderhfov = pi if props.fovModeEnum == '180' else 2 * pi if props.fovModeEnum == '360' else h_fov
+        rendervfov = pi if props.fovModeEnum == '180' or props.fovModeEnum == '360' else v_fov
         self.image_size = int(ceil(self.scene.render.resolution_x * scale)), int(ceil(self.scene.render.resolution_y * scale))
-        base_resolution = (
-            int(ceil(self.image_size[0] * (pi/2 / render_fov))),
-            int(ceil(self.image_size[1] * (pi/2 / min(2*pi if is_dome else pi, render_fov))))
-        )
+        base_resolution = int(ceil(self.image_size[0] * (pi/2 / renderhfov))), int(ceil(self.image_size[1] * (pi/2 / rendervfov)))
         
         # Generate fragment shader code
-        fovfrac = render_fov / (2*pi)
+        vfovfrac = renderhfov / (2*pi)
+        hfovfrac = rendervfov / (2*pi)
         sidefrac = max(0, min(1, (h_fov - pi/2) / pi))
         tbfrac = max(sidefrac, max(0, min(1, (v_fov - pi/2) / pi)))
         
@@ -353,7 +353,7 @@ class Renderer:
         # print(f"stichAngle {stitch_margin} margin:{margin} hmargin:{hmargin} vmargin:{vmargin} extrusion:{extrusion} intrusion:{intrusion}")
         # print(f"HTEXSCALE:{1 / (1 + 2 * extrusion + 2 * hmargin)} VTEXSCALE:{1 / (1 + 2 * extrusion + 2 * vmargin)}")
         frag_shader = \
-           (commdef % (fovfrac, sidefrac, tbfrac, h_fov, v_fov, hmargin, vmargin, extrusion, intrusion))\
+           (commdef % (hfovfrac, vfovfrac, sidefrac, tbfrac, self.HFOV, self.VFOV, hmargin, vmargin, extrusion, intrusion))\
          + (dome % domemodes[int(props.domeMethodEnum)] if is_dome else equi)\
          + fetch_setup\
          + ('' if self.no_side_images else fetch_sides)\
