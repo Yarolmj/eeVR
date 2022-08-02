@@ -122,6 +122,7 @@ dome = '''
     float phi = HFOVFRAC * PI * r;
     vec3 pt;
     %s
+    //pt.y *= VFOVFRAC / HFOVFRAC;
     pt.z = cos(phi);
     float azimuth = atan2(pt.x, pt.z);
 '''
@@ -129,8 +130,8 @@ dome = '''
 domemodes = [
     'pt.xy = dunit * phi;',
     'pt.xy = dunit * sin(phi);',
-    'pt.xy = 2.0 * dunit * sin(phi * VFOVFRAC);',
-    'pt.xy = 2.0 * dunit * tan(phi * VFOVFRAC);'
+    'pt.xy = 2.0 * dunit * sin(phi * 0.5);',
+    'pt.xy = 2.0 * dunit * tan(phi * 0.5);'
 ]
 
 equi = '''
@@ -277,6 +278,15 @@ void main() {
 '''
 
 
+def trfov(src):
+    if src < pi/2:
+        return 2*atan(2*src/pi)
+    elif src < 3*pi/2:
+        return pi+2*atan(2*src/pi-2)
+    else:
+        return 2*pi+2*atan(2*src/pi-4)
+
+
 def trans_resolution(src, hscale, vscale, hmargin, vmargin):
     return int(ceil(src[0] * hscale + 2 * hmargin * src[0])), int(ceil(src[1] * vscale + 2 * vmargin * src[1]))
 
@@ -329,14 +339,14 @@ class Renderer:
         self.resolution_percentage_origin = self.scene.render.resolution_percentage
 
         scale = self.resolution_percentage_origin / 100.0
-        renderhfov = pi if props.fovModeEnum == '180' else 2 * pi if props.fovModeEnum == '360' else h_fov
-        rendervfov = pi if props.fovModeEnum == '180' or props.fovModeEnum == '360' else v_fov
+        renderhfov = trfov(pi if props.fovModeEnum == '180' else 2 * pi if props.fovModeEnum == '360' else h_fov)
+        rendervfov = trfov(pi if props.fovModeEnum == '180' or props.fovModeEnum == '360' else v_fov)
         self.image_size = int(ceil(self.scene.render.resolution_x * scale)), int(ceil(self.scene.render.resolution_y * scale))
         base_resolution = int(ceil(self.image_size[0] * (pi/2 / renderhfov))), int(ceil(self.image_size[1] * (pi/2 / rendervfov)))
         
         # Generate fragment shader code
-        vfovfrac = renderhfov / (2*pi)
-        hfovfrac = rendervfov / (2*pi)
+        hfovfrac = renderhfov / (2*pi)
+        vfovfrac = rendervfov / (2*pi)
         sidefrac = max(0, min(1, (h_fov - pi/2) / pi))
         tbfrac = max(sidefrac, max(0, min(1, (v_fov - pi/2) / pi)))
         
@@ -353,7 +363,7 @@ class Renderer:
         # print(f"stichAngle {stitch_margin} margin:{margin} hmargin:{hmargin} vmargin:{vmargin} extrusion:{extrusion} intrusion:{intrusion}")
         # print(f"HTEXSCALE:{1 / (1 + 2 * extrusion + 2 * hmargin)} VTEXSCALE:{1 / (1 + 2 * extrusion + 2 * vmargin)}")
         frag_shader = \
-           (commdef % (hfovfrac, vfovfrac, sidefrac, tbfrac, self.HFOV, self.VFOV, hmargin, vmargin, extrusion, intrusion))\
+           (commdef % (hfovfrac, vfovfrac, sidefrac, tbfrac, h_fov, v_fov, hmargin, vmargin, extrusion, intrusion))\
          + (dome % domemodes[int(props.domeMethodEnum)] if is_dome else equi)\
          + fetch_setup\
          + ('' if self.no_side_images else fetch_sides)\
